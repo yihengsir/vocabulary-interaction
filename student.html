@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VocabMaster - 学生端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #4b5563; }
+        .duo-btn { border-bottom-width: 4px; transition: all 0.1s; font-weight: 800; cursor: pointer; }
+        .duo-btn:active { border-bottom-width: 0px; transform: translateY(4px); }
+        .btn-green { background-color: #58cc02; border-color: #46a302; color: white; }
+        .btn-blue { background-color: #1cb0f6; border-color: #1899d6; color: white; }
+        .btn-red { background-color: #ff4b4b; border-color: #d33131; color: white; }
+        .nav-item.active { color: #58cc02; background-color: #e5f9d6; border: 2px solid #b3eb87; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <div id="auth-screen" class="fixed inset-0 bg-green-500 z-50 flex flex-col items-center justify-center p-6">
+        <div class="bg-white p-8 rounded-3xl w-full max-w-sm text-center shadow-xl">
+            <h2 class="text-2xl font-extrabold mb-6 text-gray-800">加入课堂</h2>
+            <input type="password" id="entry-pass" class="w-full bg-gray-100 p-3 rounded-xl mb-3 text-center" placeholder="访问密码">
+            <input type="text" id="stu-name" class="w-full bg-gray-100 p-3 rounded-xl mb-3 text-center font-bold" placeholder="你的名字">
+            <input type="text" id="class-id" class="w-full bg-gray-100 p-3 rounded-xl mb-6 text-center font-bold" placeholder="班级连接码 (老师提供)">
+            <button onclick="connectClass()" class="duo-btn btn-green w-full py-3 rounded-xl text-lg" id="btn-connect">进入</button>
+        </div>
+    </div>
+
+    <nav class="bg-white border-b-2 border-gray-200 px-4 py-3 z-10 flex justify-between items-center">
+        <div class="font-extrabold text-xl flex items-center gap-2" id="nav-title">My Words</div>
+        <div class="flex gap-2">
+            <button onclick="switchTab('words')" id="tab-words" class="nav-item active px-3 py-1 rounded-lg font-bold text-sm"><i class="fas fa-book"></i> 词表</button>
+            <button onclick="switchTab('mistakes')" id="tab-mistakes" class="nav-item text-gray-400 px-3 py-1 rounded-lg font-bold text-sm"><i class="fas fa-book-dead"></i> 错题本</button>
+        </div>
+    </nav>
+
+    <main class="flex-grow overflow-auto p-4 w-full max-w-md mx-auto relative">
+        <div id="view-words" class="space-y-3">
+            <div class="text-center text-gray-400 text-sm py-10" id="empty-state">等待老师发送单词...</div>
+            <div id="words-list" class="space-y-3"></div>
+        </div>
+
+        <div id="view-mistakes" class="hidden space-y-3">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-bold text-red-500">我的易错词</span>
+                <button onclick="clearMistakes()" class="text-xs text-gray-400"><i class="fas fa-trash"></i> 清空</button>
+            </div>
+            <div id="mistakes-list" class="space-y-3"></div>
+        </div>
+
+        <div id="game-overlay" class="fixed inset-0 bg-white z-40 hidden flex-col">
+            <div class="bg-blue-500 text-white p-4 font-bold text-center text-lg shadow-md" id="game-title">老师发起了挑战！</div>
+            <div class="flex-grow flex flex-col justify-center p-6 w-full max-w-md mx-auto">
+                <div class="text-center mb-8">
+                    <button id="btn-play-audio" class="hidden text-5xl text-blue-500 mb-4 hover:scale-110 transition"><i class="fas fa-volume-up"></i></button>
+                    <h2 id="q-text" class="text-2xl font-extrabold text-gray-800">Question</h2>
+                </div>
+                
+                <div id="mcq-area" class="grid grid-cols-1 gap-3 hidden"></div>
+                
+                <div id="dict-area" class="hidden flex flex-col gap-4">
+                    <input type="text" id="dict-input" class="w-full border-b-4 border-gray-300 bg-gray-50 text-center text-2xl font-bold p-3 focus:outline-none focus:border-blue-500" placeholder="Type the word here...">
+                    <button onclick="checkDict()" class="duo-btn btn-blue py-3 rounded-xl text-lg">Submit</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let peer = null;
+        let conn = null;
+        let myName = "";
+        let localWords = JSON.parse(localStorage.getItem('vocabLocalWords')) || [];
+        let mistakes = JSON.parse(localStorage.getItem('vocabMistakes')) || [];
+        
+        // 游戏状态
+        let currentGame = [], gIdx = 0, gScore = 0, gType = '';
+
+        window.onload = () => { renderWords(); renderMistakes(); };
+
+        function switchTab(t) {
+            ['words', 'mistakes'].forEach(x => {
+                document.getElementById(`tab-${x}`).classList.replace('active', 'text-gray-400');
+                document.getElementById(`view-${x}`).classList.add('hidden');
+            });
+            document.getElementById(`tab-${t}`).classList.add('active');
+            document.getElementById(`tab-${t}`).classList.remove('text-gray-400');
+            document.getElementById(`view-${t}`).classList.remove('hidden');
+        }
+
+        function connectClass() {
+            if(document.getElementById('entry-pass').value !== 'study with FF') return alert('密码错误');
+            myName = document.getElementById('stu-name').value;
+            const cid = document.getElementById('class-id').value;
+            if(!myName || !cid) return alert('请输入完整信息');
+
+            document.getElementById('btn-connect').innerText = "连接中...";
+            
+            peer = new Peer(`vocab-stu-${Math.floor(Math.random()*10000)}`);
+            peer.on('open', () => {
+                conn = peer.connect(`vocab-ff-${cid}`);
+                conn.on('open', () => {
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    alert("已连接到老师！");
+                });
+                conn.on('data', data => handleTeacherData(data));
+            });
+        }
+
+        function handleTeacherData(payload) {
+            if(payload.type === 'words') {
+                localWords = payload.data;
+                localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
+                renderWords();
+                switchTab('words');
+            } else if(payload.type.startsWith('game_')) {
+                startGame(payload.type, payload.data);
+            }
+        }
+
+        function renderWords() {
+            const list = document.getElementById('words-list');
+            if(localWords.length) document.getElementById('empty-state').classList.add('hidden');
+            list.innerHTML = localWords.map(w => `
+                <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm" onclick="speak('${w.word}')">
+                    <div class="flex justify-between items-baseline mb-1">
+                        <span class="font-extrabold text-xl">${w.word}</span>
+                        <span class="text-xs bg-blue-100 text-blue-600 px-2 rounded">${w.pos}</span>
+                    </div>
+                    <div class="font-bold text-gray-600 mb-1">${w.definition_cn}</div>
+                    <div class="text-xs text-gray-400 italic">${w.example_sentence}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderMistakes() {
+            document.getElementById('mistakes-list').innerHTML = mistakes.map(w => `
+                <div class="bg-red-50 p-3 rounded-xl border border-red-200 flex justify-between">
+                    <div><span class="font-bold text-red-600">${w.word}</span> <span class="text-sm text-gray-600">${w.definition_cn}</span></div>
+                    <button onclick="speak('${w.word}')" class="text-red-400"><i class="fas fa-volume-up"></i></button>
+                </div>
+            `).join('');
+        }
+        function clearMistakes() { mistakes=[]; localStorage.removeItem('vocabMistakes'); renderMistakes(); }
+
+        // --- 游戏引擎 ---
+        function startGame(type, data) {
+            if(!data || data.length === 0) return;
+            gType = type;
+            currentGame = [...data].sort(()=>0.5-Math.random());
+            gIdx = 0; gScore = 0;
+            document.getElementById('game-overlay').classList.remove('hidden');
+            document.getElementById('game-overlay').classList.add('flex');
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            const q = currentGame[gIdx];
+            document.getElementById('mcq-area').classList.add('hidden');
+            document.getElementById('dict-area').classList.add('hidden');
+            document.getElementById('btn-play-audio').classList.add('hidden');
+
+            if(gType === 'game_mcq') {
+                document.getElementById('q-text').innerText = q.definition_cn;
+                document.getElementById('mcq-area').classList.remove('hidden');
+                let opts = [q];
+                while(opts.length < Math.min(4, localWords.length)) {
+                    let rand = localWords[Math.floor(Math.random()*localWords.length)];
+                    if(!opts.includes(rand)) opts.push(rand);
+                }
+                document.getElementById('mcq-area').innerHTML = opts.sort(()=>0.5-Math.random()).map(o => `
+                    <button onclick="checkMCQ('${o.word}', '${q.word}')" class="duo-btn btn-blue py-4 rounded-xl text-lg w-full">${o.word}</button>
+                `).join('');
+            } else if (gType === 'game_dict') {
+                document.getElementById('q-text').innerText = "听音拼写单词";
+                document.getElementById('dict-area').classList.remove('hidden');
+                document.getElementById('btn-play-audio').classList.remove('hidden');
+                document.getElementById('dict-input').value = "";
+                document.getElementById('btn-play-audio').onclick = () => speak(q.word);
+                speak(q.word);
+            }
+        }
+
+        function checkMCQ(ans, correct) { handleAnswer(ans === correct, correct); }
+        function checkDict() { handleAnswer(document.getElementById('dict-input').value.trim().toLowerCase() === currentGame[gIdx].word.toLowerCase(), currentGame[gIdx].word); }
+
+        function handleAnswer(isCorrect, wordStr) {
+            if(isCorrect) gScore += 100;
+            else {
+                let wObj = localWords.find(w => w.word === wordStr);
+                if(wObj && !mistakes.find(m => m.word === wordStr)) { mistakes.push(wObj); localStorage.setItem('vocabMistakes', JSON.stringify(mistakes)); renderMistakes(); }
+            }
+            gIdx++;
+            if(gIdx < currentGame.length) loadQuestion();
+            else finishGame();
+        }
+
+        function finishGame() {
+            const acc = Math.round((gScore / (currentGame.length*100))*100) + "%";
+            alert(`挑战结束！得分: ${gScore}, 正确率: ${acc}`);
+            document.getElementById('game-overlay').classList.add('hidden');
+            document.getElementById('game-overlay').classList.remove('flex');
+            if(conn) conn.send({ type: 'score', name: myName, score: gScore, acc: acc, gameType: gType === 'game_mcq' ? 'Choice' : 'Dictation' });
+        }
+
+        function speak(text) {
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'en-US';
+            window.speechSynthesis.speak(u);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VocabMaster - 教师端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #4b5563; }
+        .duo-btn { border-bottom-width: 4px; transition: all 0.1s; font-weight: 800; cursor: pointer; }
+        .duo-btn:active { border-bottom-width: 0px; transform: translateY(4px); }
+        .btn-green { background-color: #58cc02; border-color: #46a302; color: white; }
+        .btn-blue { background-color: #1cb0f6; border-color: #1899d6; color: white; }
+        .btn-purple { background-color: #a855f7; border-color: #9333ea; color: white; }
+        .btn-red { background-color: #ff4b4b; border-color: #d33131; color: white; }
+        .btn-gray { background-color: #e5e7eb; border-color: #d1d5db; color: #4b5563; }
+        .nav-item.active { color: #1cb0f6; background-color: #ddf4ff; border: 2px solid #84d8ff; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden relative">
+
+    <div id="auth-screen" class="fixed inset-0 bg-blue-500 z-50 flex flex-col items-center justify-center">
+        <div class="text-white text-6xl mb-4"><i class="fas fa-chalkboard-teacher"></i></div>
+        <h2 class="text-white text-3xl font-extrabold mb-6">教师端登录</h2>
+        <input type="password" id="entry-pass" class="p-3 rounded-xl text-center mb-4 w-64 text-gray-800 focus:outline-none" placeholder="输入访问密码">
+        <button onclick="checkAuth()" class="duo-btn bg-white text-blue-500 border-gray-200 py-3 w-64 rounded-xl text-lg">进入控制台</button>
+    </div>
+
+    <nav class="bg-white border-b-2 border-gray-200 px-4 py-3 z-10 flex justify-between items-center">
+        <div class="font-extrabold text-xl flex items-center gap-2"><i class="fas fa-cube text-blue-500"></i> VocabMaster <span class="text-xs bg-red-100 text-red-600 px-2 rounded-full">Teacher</span></div>
+        <div class="flex gap-2">
+            <button onclick="switchTab('prepare')" id="tab-prepare" class="nav-item active px-4 py-2 rounded-xl font-bold"><i class="fas fa-edit"></i> 备课</button>
+            <button onclick="switchTab('class')" id="tab-class" class="nav-item text-gray-400 px-4 py-2 rounded-xl font-bold"><i class="fas fa-users"></i> 课堂</button>
+            <button onclick="openSettings()" class="text-gray-400 hover:text-blue-500 px-2"><i class="fas fa-cog text-xl"></i></button>
+        </div>
+    </nav>
+
+    <main class="flex-grow overflow-auto p-4 max-w-5xl mx-auto w-full">
+        <section id="view-prepare" class="space-y-4">
+            <div class="bg-white p-5 rounded-2xl border-2 border-gray-200 shadow-sm">
+                <label class="block font-bold mb-2">📥 输入单词 (支持中文、模糊拼写、短语)</label>
+                <textarea id="input-words" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl p-3 h-24 focus:outline-none focus:border-blue-400" placeholder="例如: serendipity, 意外发现, look foward to (拼写错误也会自动修正)"></textarea>
+                <button onclick="processWords()" class="duo-btn btn-blue w-full mt-3 py-3 rounded-xl text-lg"><i class="fas fa-magic"></i> 智能解析</button>
+            </div>
+            <div id="cards-container" class="space-y-3"></div>
+        </section>
+
+        <section id="view-class" class="hidden space-y-4">
+            <div class="bg-white p-5 rounded-2xl border-2 border-gray-200 flex gap-4 items-end">
+                <div class="flex-1">
+                    <label class="block text-sm font-bold text-gray-500 mb-1">班级连接码 (Class ID)</label>
+                    <input type="text" id="class-id" class="w-full bg-gray-100 border-2 border-gray-200 rounded-xl p-2 font-bold text-lg" placeholder="例如: 8888">
+                </div>
+                <button onclick="startServer()" id="btn-server" class="duo-btn btn-green py-2 px-6 rounded-xl h-[44px]">开启教室</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-blue-50 p-4 rounded-2xl border-2 border-blue-200 text-center">
+                    <div class="text-blue-500 font-extrabold text-3xl mb-1" id="student-count">0</div>
+                    <div class="text-sm font-bold text-gray-500">已连接学生</div>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <button onclick="pushData('words')" class="duo-btn btn-blue py-2 rounded-xl text-sm"><i class="fas fa-paper-plane"></i> 推送当前词表</button>
+                    <button onclick="pushData('game_mcq')" class="duo-btn btn-purple py-2 rounded-xl text-sm"><i class="fas fa-gamepad"></i> 推送选择挑战</button>
+                    <button onclick="pushData('game_dict')" class="duo-btn btn-red py-2 rounded-xl text-sm"><i class="fas fa-headphones"></i> 推送听写挑战</button>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border-2 border-gray-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-extrabold text-lg"><i class="fas fa-trophy text-yellow-500"></i> 学生成绩榜</h3>
+                    <button onclick="exportScores()" class="text-sm font-bold text-blue-500 hover:underline"><i class="fas fa-download"></i> 导出 CSV</button>
+                </div>
+                <div id="score-board" class="space-y-2">
+                    <div class="text-center text-gray-400 py-4 text-sm">暂无数据</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white p-6 rounded-2xl w-96">
+            <h3 class="font-bold text-xl mb-4">API 设置 (仅本地保存)</h3>
+            <input type="text" id="api-key" placeholder="API Key" class="w-full p-2 border-2 rounded mb-2">
+            <input type="text" id="api-url" placeholder="API URL" class="w-full p-2 border-2 rounded mb-2" value="https://api.siliconflow.cn/v1/chat/completions">
+            <input type="text" id="api-model" placeholder="Model" class="w-full p-2 border-2 rounded mb-4" value="deepseek-ai/DeepSeek-V3">
+            <button onclick="saveSettings()" class="duo-btn btn-green w-full py-2 rounded-xl">保存</button>
+        </div>
+    </div>
+
+    <script>
+        let config = JSON.parse(localStorage.getItem('vocabTeacherConf')) || { key:'', url:'https://api.siliconflow.cn/v1/chat/completions', model:'deepseek-ai/DeepSeek-V3' };
+        let currentWords = [];
+        let peer = null;
+        let connections = [];
+        let scores = [];
+
+        function checkAuth() {
+            if(document.getElementById('entry-pass').value === 'study with FF') document.getElementById('auth-screen').classList.add('hidden');
+            else alert('密码错误');
+        }
+
+        function switchTab(t) {
+            document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active', 'text-blue-500'));
+            document.getElementById(`tab-${t}`).classList.add('active');
+            document.getElementById('view-prepare').classList.add('hidden');
+            document.getElementById('view-class').classList.add('hidden');
+            document.getElementById(`view-${t}`).classList.remove('hidden');
+        }
+
+        function openSettings() {
+            document.getElementById('api-key').value = config.key;
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+        function saveSettings() {
+            config.key = document.getElementById('api-key').value;
+            config.url = document.getElementById('api-url').value;
+            config.model = document.getElementById('api-model').value;
+            localStorage.setItem('vocabTeacherConf', JSON.stringify(config));
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        // AI 解析
+        async function processWords() {
+            if(!config.key) return alert("请先配置 API Key");
+            const input = document.getElementById('input-words').value;
+            const words = input.split(/[\n,]+/).map(w=>w.trim()).filter(w=>w);
+            if(!words.length) return;
+
+            document.getElementById('cards-container').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i> AI正在解析中...</div>';
+            currentWords = [];
+
+            for(let w of words) {
+                const prompt = `You are an expert English teacher preparing A2-B1 level students for international middle school entrance exams. Analyze: "${w}". 1. If Chinese, translate to the best English word. 2. If English with a typo, correct it. 3. Identify part of speech or 'phrase'. Return strictly JSON: {"word":"corrected word/phrase", "phonetic":"IPA", "pos":"part of speech", "definition_cn":"中文释义", "example_sentence":"An engaging A2-B1 level example sentence", "example_translation":"例句翻译"}`;
+                try {
+                    const res = await fetch(config.url, {
+                        method: 'POST', headers: {'Content-Type':'application/json', 'Authorization':`Bearer ${config.key}`},
+                        body: JSON.stringify({ model: config.model, messages: [{role:"user", content:prompt}] })
+                    });
+                    const data = await res.json();
+                    let text = data.choices[0].message.content.replace(/```json|```/g, '').trim();
+                    currentWords.push(JSON.parse(text));
+                } catch (e) { console.error(e); }
+            }
+            renderCards();
+        }
+
+        function renderCards() {
+            const container = document.getElementById('cards-container');
+            container.innerHTML = currentWords.map((w,i) => `
+                <div class="bg-white p-4 rounded-xl border-2 border-gray-100 flex justify-between">
+                    <div>
+                        <div class="font-extrabold text-xl">${w.word} <span class="text-xs text-gray-400 bg-gray-100 px-1 rounded">${w.pos}</span></div>
+                        <div class="text-sm text-blue-500 font-bold">${w.definition_cn}</div>
+                        <div class="text-xs text-gray-500 mt-1 italic">${w.example_sentence}</div>
+                    </div>
+                    <button onclick="currentWords.splice(${i},1);renderCards();" class="text-red-400"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        // WebRTC 教室逻辑
+        function startServer() {
+            const cid = document.getElementById('class-id').value;
+            if(!cid) return alert("请输入班级码");
+            
+            if(peer) peer.destroy();
+            peer = new Peer(`vocab-ff-${cid}`);
+            
+            peer.on('open', id => {
+                document.getElementById('btn-server').innerText = "教室已开启";
+                document.getElementById('btn-server').classList.replace('btn-green', 'btn-gray');
+            });
+
+            peer.on('connection', conn => {
+                connections.push(conn);
+                updateConnCount();
+                conn.on('data', data => {
+                    if(data.type === 'score') {
+                        scores.push({name: data.name, score: data.score, acc: data.acc, type: data.gameType});
+                        renderScores();
+                    }
+                });
+                conn.on('close', () => { connections = connections.filter(c => c !== conn); updateConnCount(); });
+            });
+        }
+
+        function updateConnCount() { document.getElementById('student-count').innerText = connections.length; }
+
+        function pushData(type) {
+            if(!connections.length) return alert("没有学生连接");
+            if(type === 'words' && !currentWords.length) return alert("词表为空");
+            const payload = { type: type, data: currentWords };
+            connections.forEach(c => c.send(payload));
+            alert("推送成功！");
+        }
+
+        function renderScores() {
+            document.getElementById('score-board').innerHTML = scores.map(s => `
+                <div class="flex justify-between items-center bg-gray-50 p-2 rounded border">
+                    <span class="font-bold">${s.name} <span class="text-xs text-gray-400">(${s.type})</span></span>
+                    <span class="text-yellow-500 font-extrabold">${s.score}分 / ${s.acc}</span>
+                </div>
+            `).join('');
+        }
+
+        function exportScores() {
+            const csv = "Student,Type,Score,Accuracy\n" + scores.map(s => `${s.name},${s.type},${s.score},${s.acc}`).join('\n');
+            const a = document.createElement('a');
+            a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
+            a.download = `Class_Scores_${new Date().toLocaleDateString()}.csv`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
