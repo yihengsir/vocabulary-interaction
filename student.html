@@ -2,17 +2,18 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VocabMaster - 学生端</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #4b5563; }
+        body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #4b5563; padding-bottom: env(safe-area-inset-bottom); }
         .duo-btn { border-bottom-width: 4px; transition: all 0.1s; font-weight: 800; cursor: pointer; }
         .duo-btn:active { border-bottom-width: 0px; transform: translateY(4px); }
         .btn-green { background-color: #58cc02; border-color: #46a302; color: white; }
         .btn-blue { background-color: #1cb0f6; border-color: #1899d6; color: white; }
+        .btn-gray { background-color: #e5e7eb; border-color: #d1d5db; color: #4b5563; }
         .nav-item.active { color: #58cc02; background-color: #e5f9d6; border: 2px solid #b3eb87; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
@@ -22,23 +23,30 @@
     <div id="auth-screen" class="fixed inset-0 bg-green-500 z-50 flex flex-col items-center justify-center p-6">
         <div class="bg-white p-8 rounded-3xl w-full max-w-sm text-center shadow-xl">
             <div class="text-green-500 text-5xl mb-4"><i class="fas fa-user-graduate"></i></div>
-            <h2 class="text-2xl font-extrabold mb-6 text-gray-800">加入课堂</h2>
+            <h2 class="text-2xl font-extrabold mb-6 text-gray-800">进入课堂</h2>
             <input type="password" id="entry-pass" class="w-full bg-gray-100 border-2 border-transparent focus:border-green-300 p-3 rounded-xl mb-3 text-center outline-none" placeholder="访问密码">
             <input type="text" id="stu-name" class="w-full bg-gray-100 border-2 border-transparent focus:border-green-300 p-3 rounded-xl mb-3 text-center font-bold outline-none" placeholder="你的名字 (如: Hao Chen)">
-            <input type="text" id="class-id" class="w-full bg-gray-100 border-2 border-transparent focus:border-green-300 p-3 rounded-xl mb-6 text-center font-bold outline-none" placeholder="班级连接码">
-            <button onclick="connectClass()" class="duo-btn btn-green w-full py-3 rounded-xl text-lg" id="btn-connect">进入教室</button>
+            <input type="text" id="class-id" class="w-full bg-gray-100 border-2 border-transparent focus:border-green-300 p-3 rounded-xl mb-6 text-center font-bold outline-none" placeholder="班级连接码 (老师提供)">
+            
+            <div class="flex gap-3">
+                <button onclick="connectClass()" class="duo-btn btn-green flex-1 py-3 rounded-xl text-lg" id="btn-connect">进入教室</button>
+                <button onclick="offlineMode()" class="duo-btn btn-gray flex-1 py-3 rounded-xl text-lg" title="查看本地保存的词表和错题">离线复习</button>
+            </div>
         </div>
     </div>
 
-    <nav class="bg-white border-b-2 border-gray-200 px-4 py-3 z-10 flex justify-between items-center">
-        <div class="font-extrabold text-xl flex items-center gap-2 text-gray-700" id="nav-title">My Words</div>
-        <div class="flex gap-2">
-            <button onclick="switchTab('words')" id="tab-words" class="nav-item active px-3 py-1 rounded-lg font-bold text-sm"><i class="fas fa-book"></i> 词表</button>
-            <button onclick="switchTab('mistakes')" id="tab-mistakes" class="nav-item text-gray-400 px-3 py-1 rounded-lg font-bold text-sm"><i class="fas fa-book-dead"></i> 错题本</button>
+    <nav class="bg-white border-b-2 border-gray-200 px-3 sm:px-4 py-3 z-10 flex justify-between items-center shrink-0">
+        <div class="font-extrabold text-lg sm:text-xl flex items-center gap-2 text-gray-700 whitespace-nowrap">
+            My Words 
+            <button onclick="location.reload()" class="text-gray-400 hover:text-blue-500 ml-1 bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center border border-gray-200"><i class="fas fa-sync-alt text-sm"></i></button>
+        </div>
+        <div class="flex gap-1.5 sm:gap-2">
+            <button onclick="switchTab('words')" id="tab-words" class="nav-item active px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book mr-1"></i>生词表</button>
+            <button onclick="switchTab('mistakes')" id="tab-mistakes" class="nav-item text-gray-400 px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book-dead mr-1"></i>错题本</button>
         </div>
     </nav>
 
-    <main class="flex-grow overflow-auto p-4 w-full max-w-md mx-auto relative">
+    <main class="flex-grow overflow-auto p-4 w-full max-w-md mx-auto relative pb-8">
         <div id="view-words" class="space-y-3">
             <div class="text-center text-gray-400 font-bold text-sm py-10" id="empty-state">
                 <i class="fas fa-satellite-dish text-4xl mb-3 text-gray-300"></i><br>
@@ -50,7 +58,7 @@
         <div id="view-mistakes" class="hidden space-y-3">
             <div class="flex justify-between items-center mb-2">
                 <span class="font-bold text-red-500"><i class="fas fa-exclamation-circle"></i> 我的易错词</span>
-                <button onclick="clearMistakes()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空复习</button>
+                <button onclick="clearMistakes()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空</button>
             </div>
             <div id="mistakes-list" class="space-y-3"></div>
         </div>
@@ -89,12 +97,23 @@
             renderWords(); 
             renderMistakes(); 
             
-            // 自动读取链接中的 Class ID (扫码或点击链接引入)
             const urlParams = new URLSearchParams(window.location.search);
             if(urlParams.has('classId')) {
                 document.getElementById('class-id').value = urlParams.get('classId');
             }
         };
+
+        // 新增：离线复习模式逻辑
+        function offlineMode() {
+            if(document.getElementById('entry-pass').value !== 'study with FF') return alert('密码错误');
+            if(localWords.length === 0 && mistakes.length === 0) return alert('本地暂无历史数据，请先连接教室获取数据！');
+            
+            document.getElementById('auth-screen').classList.add('hidden');
+            // 如果只有错题没有词表，自动跳到错题页
+            if(localWords.length === 0 && mistakes.length > 0) {
+                switchTab('mistakes');
+            }
+        }
 
         function switchTab(t) {
             ['words', 'mistakes'].forEach(x => {
@@ -120,13 +139,12 @@
                 conn = peer.connect(`vocab-ff-${cid}`);
                 conn.on('open', () => {
                     document.getElementById('auth-screen').classList.add('hidden');
-                    // 核心修改：连接成功后，立刻向老师发送包含自己名字的报道消息
                     conn.send({ type: 'join', name: myName });
                 });
                 conn.on('data', data => handleTeacherData(data));
                 conn.on('error', err => {
                     alert('连接失败，请检查班级码是否正确或老师是否已开启教室。');
-                    document.getElementById('btn-connect').innerText = "重试";
+                    document.getElementById('btn-connect').innerText = "进入教室";
                     document.getElementById('btn-connect').classList.replace('btn-gray', 'btn-green');
                 });
             });
@@ -147,6 +165,8 @@
         function renderWords() {
             const list = document.getElementById('words-list');
             if(localWords.length) document.getElementById('empty-state').classList.add('hidden');
+            else document.getElementById('empty-state').classList.remove('hidden');
+
             list.innerHTML = localWords.map(w => `
                 <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition" onclick="speak('${w.word}')">
                     <div class="flex justify-between items-baseline mb-1">
@@ -245,7 +265,7 @@
         function speak(text) {
             const u = new SpeechSynthesisUtterance(text);
             u.lang = 'en-US';
-            u.rate = 0.9; // 稍微放慢一点语速，适合学生听写
+            u.rate = 0.9; 
             window.speechSynthesis.speak(u);
         }
     </script>
