@@ -71,7 +71,7 @@
         <div id="view-mistakes" class="hidden space-y-3">
             <div class="flex justify-between items-center mb-2">
                 <span class="font-bold text-red-500"><i class="fas fa-exclamation-circle"></i> 我的易错词</span>
-                <button onclick="clearMistakes()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空</button>
+                <button onclick="clearMistakes()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空全部错题</button>
             </div>
             <div id="mistakes-list" class="space-y-3"></div>
         </div>
@@ -195,7 +195,7 @@
             }
         }
 
-        // 修改：增加独立删除按钮，并将点击发声移至文本区域
+        // --- 当前词表渲染与删除 ---
         function renderWords() {
             const list = document.getElementById('words-list');
             if(localWords.length) document.getElementById('empty-state').classList.add('hidden');
@@ -217,9 +217,8 @@
             `).join('');
         }
 
-        // 新增：删除单个单词
         function deleteWord(idx, e) {
-            e.stopPropagation(); // 阻止触发下方区域的语音朗读
+            e.stopPropagation(); 
             if(confirm("确定从当前词表中移除这个单词吗？")) {
                 localWords.splice(idx, 1);
                 localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
@@ -227,7 +226,6 @@
             }
         }
 
-        // 新增：清空当前所有单词
         function clearWords() {
             if(localWords.length === 0) return;
             if(confirm("确定清空当前生词表吗？(历史记录中仍会保留)")) {
@@ -237,19 +235,42 @@
             }
         }
 
+        // --- 错题本渲染与删除 ---
         function renderMistakes() {
-            document.getElementById('mistakes-list').innerHTML = mistakes.map(w => `
-                <div class="bg-red-50 p-4 rounded-xl border-2 border-red-100 flex justify-between items-center cursor-pointer hover:bg-red-100 transition" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
-                    <div>
-                        <div class="font-extrabold text-lg text-red-600 mb-1">${w.word}</div>
-                        <div class="text-sm font-bold text-gray-600">${w.definition_cn}</div>
+            document.getElementById('mistakes-list').innerHTML = mistakes.map((w, index) => `
+                <div class="bg-red-50 p-4 rounded-xl border-2 border-red-100 relative group hover:bg-red-100 transition">
+                    <button onclick="deleteMistake(${index}, event)" class="absolute top-3 right-3 text-red-300 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full bg-white hover:bg-red-200 transition z-10" title="移出错题本"><i class="fas fa-times"></i></button>
+                    
+                    <div class="pr-8 cursor-pointer flex justify-between items-center" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
+                        <div>
+                            <div class="font-extrabold text-lg text-red-600 mb-1">${w.word}</div>
+                            <div class="text-sm font-bold text-gray-600">${w.definition_cn}</div>
+                        </div>
+                        <div class="text-red-400 text-2xl mr-2"><i class="fas fa-volume-up"></i></div>
                     </div>
-                    <button class="text-red-400 text-2xl"><i class="fas fa-volume-up"></i></button>
                 </div>
             `).join('');
         }
-        function clearMistakes() { if(confirm("确定清空错题本吗？")) { mistakes=[]; localStorage.removeItem('vocabMistakes'); renderMistakes(); } }
+        
+        function deleteMistake(idx, e) {
+            e.stopPropagation();
+            if(confirm("恭喜你掌握了这个单词！\n确定将它从错题本移出吗？")) {
+                mistakes.splice(idx, 1);
+                localStorage.setItem('vocabMistakes', JSON.stringify(mistakes));
+                renderMistakes();
+            }
+        }
 
+        function clearMistakes() { 
+            if(mistakes.length === 0) return;
+            if(confirm("确定清空全部错题吗？")) { 
+                mistakes=[]; 
+                localStorage.removeItem('vocabMistakes'); 
+                renderMistakes(); 
+            } 
+        }
+
+        // --- 历史存档渲染与删除 ---
         function renderHistory() {
             const list = document.getElementById('history-list');
             if(!studentHistory.length) {
@@ -257,9 +278,11 @@
                 return;
             }
             
-            list.innerHTML = studentHistory.map(h => `
-                <details class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm group mb-3 outline-none cursor-pointer">
-                    <summary class="flex justify-between items-center list-none font-bold text-gray-700 outline-none">
+            list.innerHTML = studentHistory.map((h, index) => `
+                <details class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm group mb-3 outline-none cursor-pointer relative">
+                    <button onclick="deleteHistoryEntry(${index}, event)" class="absolute top-3 right-3 text-gray-300 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 hover:bg-red-50 transition z-10" title="删除此条历史存档"><i class="fas fa-trash-alt"></i></button>
+
+                    <summary class="flex justify-between items-center list-none font-bold text-gray-700 outline-none pr-10">
                         <span><i class="fas fa-clock text-blue-400 mr-2"></i>${h.date}</span>
                         <div class="flex items-center gap-2">
                             <span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${h.words.length} 词</span>
@@ -278,6 +301,17 @@
             `).join('');
         }
 
+        function deleteHistoryEntry(idx, e) {
+            e.preventDefault(); // 防止点击删除时触发 details 的展开/折叠
+            e.stopPropagation();
+            if(confirm("确定删除这份历史词表存档吗？此操作不可恢复。")) {
+                studentHistory.splice(idx, 1);
+                localStorage.setItem('vocabStudentHistory', JSON.stringify(studentHistory));
+                renderHistory();
+            }
+        }
+
+        // --- 游戏引擎 ---
         function startGame(type, data) {
             if(!data || data.length === 0) return;
             gType = type;
