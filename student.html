@@ -2,13 +2,17 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>VocabMaster - 学生端</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #4b5563; padding-bottom: env(safe-area-inset-bottom); }
+        
+        /* 智能判断顶部安全区距离（刘海/灵动岛） */
+        nav { padding-top: max(env(safe-area-inset-top), 12px) !important; }
+        
         .duo-btn { border-bottom-width: 4px; transition: all 0.1s; font-weight: 800; cursor: pointer; }
         .duo-btn:active { border-bottom-width: 0px; transform: translateY(4px); }
         .btn-green { background-color: #58cc02; border-color: #46a302; color: white; }
@@ -52,6 +56,11 @@
 
     <main class="flex-grow overflow-auto p-4 w-full max-w-md mx-auto relative pb-8">
         <div id="view-words" class="space-y-3">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-bold text-blue-500"><i class="fas fa-book-open"></i> 当前学习词表</span>
+                <button onclick="clearWords()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空词表</button>
+            </div>
+
             <div class="text-center text-gray-400 font-bold text-sm py-10" id="empty-state">
                 <i class="fas fa-satellite-dish text-4xl mb-3 text-gray-300"></i><br>
                 等待老师发送最新单词...
@@ -75,7 +84,7 @@
         </div>
 
         <div id="game-overlay" class="fixed inset-0 bg-white z-40 hidden flex-col">
-            <div class="bg-blue-500 text-white p-4 font-bold text-center text-lg shadow-md flex justify-between items-center">
+            <div class="bg-blue-500 text-white p-4 font-bold text-center text-lg shadow-md flex justify-between items-center" style="padding-top: max(env(safe-area-inset-top), 16px);">
                 <span><i class="fas fa-bolt text-yellow-300"></i> 挑战进行中</span>
                 <span id="game-progress" class="text-sm bg-blue-600 px-2 rounded-lg"></span>
             </div>
@@ -102,7 +111,6 @@
         
         let localWords = JSON.parse(localStorage.getItem('vocabLocalWords')) || [];
         let mistakes = JSON.parse(localStorage.getItem('vocabMistakes')) || [];
-        // 新增历史记录状态
         let studentHistory = JSON.parse(localStorage.getItem('vocabStudentHistory')) || [];
         
         let currentGame = [], gIdx = 0, gScore = 0, gType = '';
@@ -168,11 +176,9 @@
 
         function handleTeacherData(payload) {
             if(payload.type === 'words') {
-                // 将最新接收到的词表保存到当前视图
                 localWords = payload.data;
                 localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
                 
-                // 将这份最新词表直接追加到历史库中
                 studentHistory.unshift({
                     id: Date.now(),
                     date: new Date().toLocaleString(),
@@ -189,21 +195,46 @@
             }
         }
 
+        // 修改：增加独立删除按钮，并将点击发声移至文本区域
         function renderWords() {
             const list = document.getElementById('words-list');
             if(localWords.length) document.getElementById('empty-state').classList.add('hidden');
             else document.getElementById('empty-state').classList.remove('hidden');
 
-            list.innerHTML = localWords.map(w => `
-                <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
-                    <div class="flex justify-between items-baseline mb-1">
-                        <span class="font-extrabold text-xl text-gray-800">${w.word}</span>
-                        <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold">${w.pos}</span>
+            list.innerHTML = localWords.map((w, index) => `
+                <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm relative group hover:border-blue-300 transition">
+                    <button onclick="deleteWord(${index}, event)" class="absolute top-3 right-3 text-gray-300 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 hover:bg-red-50 transition z-10"><i class="fas fa-times"></i></button>
+                    
+                    <div class="pr-8 cursor-pointer" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
+                        <div class="flex items-baseline mb-1">
+                            <span class="font-extrabold text-xl text-gray-800 mr-2">${w.word}</span>
+                            <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold">${w.pos}</span>
+                        </div>
+                        <div class="font-bold text-blue-500 mb-1">${w.definition_cn}</div>
+                        <div class="text-sm text-gray-500 italic bg-gray-50 p-2 rounded-lg mt-2 border-l-2 border-gray-200">"${w.example_sentence}"</div>
                     </div>
-                    <div class="font-bold text-blue-500 mb-1">${w.definition_cn}</div>
-                    <div class="text-sm text-gray-500 italic bg-gray-50 p-2 rounded-lg mt-2 border-l-2 border-gray-200">"${w.example_sentence}"</div>
                 </div>
             `).join('');
+        }
+
+        // 新增：删除单个单词
+        function deleteWord(idx, e) {
+            e.stopPropagation(); // 阻止触发下方区域的语音朗读
+            if(confirm("确定从当前词表中移除这个单词吗？")) {
+                localWords.splice(idx, 1);
+                localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
+                renderWords();
+            }
+        }
+
+        // 新增：清空当前所有单词
+        function clearWords() {
+            if(localWords.length === 0) return;
+            if(confirm("确定清空当前生词表吗？(历史记录中仍会保留)")) {
+                localWords = [];
+                localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
+                renderWords();
+            }
         }
 
         function renderMistakes() {
@@ -226,7 +257,6 @@
                 return;
             }
             
-            // 使用 <details> 标签实现可折叠手风琴效果
             list.innerHTML = studentHistory.map(h => `
                 <details class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm group mb-3 outline-none cursor-pointer">
                     <summary class="flex justify-between items-center list-none font-bold text-gray-700 outline-none">
