@@ -35,6 +35,7 @@
         <div class="flex gap-2">
             <button onclick="switchTab('prepare')" id="tab-prepare" class="nav-item active px-4 py-2 rounded-xl font-bold"><i class="fas fa-edit"></i> 备课</button>
             <button onclick="switchTab('class')" id="tab-class" class="nav-item text-gray-400 px-4 py-2 rounded-xl font-bold"><i class="fas fa-users"></i> 课堂</button>
+            <button onclick="switchTab('history')" id="tab-history" class="nav-item text-gray-400 px-4 py-2 rounded-xl font-bold"><i class="fas fa-history"></i> 历史</button>
             <button onclick="openSettings()" class="text-gray-400 hover:text-blue-500 px-2"><i class="fas fa-cog text-xl"></i></button>
         </div>
     </nav>
@@ -54,9 +55,7 @@
                     </button>
                 </div>
             </div>
-            <div id="loading-indicator" class="hidden text-center py-4 bg-blue-50 rounded-xl border border-blue-100 mb-3">
-                <i class="fas fa-spinner fa-spin text-blue-500 text-xl mr-2"></i> <span class="text-blue-600 font-bold">AI正在解析新词中...</span>
-            </div>
+            
             <div id="cards-container" class="space-y-3"></div>
         </section>
 
@@ -79,14 +78,13 @@
                     <div class="flex justify-between items-center mb-2">
                         <div class="text-sm font-bold text-gray-500">已连接学生 (<span id="student-count">0</span>)</div>
                     </div>
-                    <div id="student-names" class="flex flex-wrap gap-2 text-sm font-bold text-blue-600">
-                    </div>
+                    <div id="student-names" class="flex flex-wrap gap-2 text-sm font-bold text-blue-600"></div>
                 </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div class="flex flex-col gap-2 col-span-2 sm:col-span-1">
-                    <button onclick="pushData('words')" class="duo-btn btn-blue py-3 rounded-xl text-sm font-bold"><i class="fas fa-paper-plane mr-1"></i> 推送当前词表</button>
+                    <button onclick="pushData('words')" class="duo-btn btn-blue py-3 rounded-xl text-sm font-bold"><i class="fas fa-paper-plane mr-1"></i> 推送当前词表并存档</button>
                 </div>
                 <div class="flex flex-col gap-2 col-span-2 sm:col-span-1">
                     <button onclick="pushData('game_mcq')" class="duo-btn btn-purple py-3 rounded-xl text-sm font-bold"><i class="fas fa-gamepad mr-1"></i> 推送选择挑战</button>
@@ -101,6 +99,15 @@
                 </div>
                 <div id="score-board" class="space-y-2">
                     <div class="text-center text-gray-400 py-4 text-sm">暂无数据</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-history" class="hidden space-y-4">
+            <div class="bg-white p-5 rounded-2xl border-2 border-gray-200">
+                <h3 class="font-extrabold text-lg mb-4 text-gray-800"><i class="fas fa-archive text-gray-400"></i> 历史推送词表</h3>
+                <div id="history-list" class="space-y-3">
+                    <div class="text-center text-gray-400 py-4 text-sm">暂无历史记录 (每次推送词表时自动保存)</div>
                 </div>
             </div>
         </section>
@@ -133,16 +140,21 @@
         let connectedStudents = {}; 
         let scores = [];
 
+        window.onload = () => { renderHistory(); };
+
         function checkAuth() {
             if(document.getElementById('entry-pass').value === 'study with FF') document.getElementById('auth-screen').classList.add('hidden');
             else alert('密码错误');
         }
 
         function switchTab(t) {
-            document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active', 'text-blue-500'));
+            ['prepare', 'class', 'history'].forEach(id => {
+                document.getElementById(`tab-${id}`).classList.remove('active', 'text-blue-500');
+                document.getElementById(`tab-${id}`).classList.add('text-gray-400');
+                document.getElementById(`view-${id}`).classList.add('hidden');
+            });
             document.getElementById(`tab-${t}`).classList.add('active');
-            document.getElementById('view-prepare').classList.add('hidden');
-            document.getElementById('view-class').classList.add('hidden');
+            document.getElementById(`tab-${t}`).classList.remove('text-gray-400');
             document.getElementById(`view-${t}`).classList.remove('hidden');
         }
 
@@ -165,16 +177,18 @@
             if(!words.length) return alert("请输入单词！");
 
             const container = document.getElementById('cards-container');
-            const loader = document.getElementById('loading-indicator');
             
-            // 如果是覆盖模式，清空现有单词数组和界面
+            // UI 控制：覆盖 vs 追加局部加载
             if(!isAppend) {
                 currentWords = [];
-                container.innerHTML = '';
+                container.innerHTML = '<div class="text-center py-6 text-blue-500"><i class="fas fa-spinner fa-spin text-3xl mb-2"></i><br><b>AI 正在解析全表...</b></div>';
+            } else {
+                const loader = document.createElement('div');
+                loader.id = 'temp-loader';
+                loader.className = 'bg-blue-50 p-4 rounded-xl border-2 border-dashed border-blue-200 flex items-center justify-center text-blue-500 font-bold mb-3 shadow-sm';
+                loader.innerHTML = '<i class="fas fa-circle-notch fa-spin text-xl mr-2"></i> 正在解析新添加的词条... (已有词条不受影响)';
+                container.prepend(loader);
             }
-            
-            // 显示顶部加载动画（不破坏现有卡片）
-            loader.classList.remove('hidden');
 
             let newlyAdded = [];
             for(let w of words) {
@@ -190,12 +204,13 @@
                 } catch (e) { console.error("Error processing word:", w, e); }
             }
             
-            loader.classList.add('hidden');
+            if(isAppend) {
+                const loader = document.getElementById('temp-loader');
+                if(loader) loader.remove();
+                inputEl.value = ""; 
+            }
             
-            // 将新词合并到主数组，如果是追加则加在最前面（方便立刻看到），然后整体重新渲染
             currentWords = isAppend ? [...newlyAdded, ...currentWords] : newlyAdded;
-            
-            if(isAppend) inputEl.value = ""; 
             renderCards();
         }
 
@@ -219,9 +234,7 @@
             return `${baseUrl}?classId=${cid}`;
         }
 
-        function copyLink() {
-            navigator.clipboard.writeText(getStudentUrl()).then(() => alert('✅ 学生链接已复制到剪贴板！可以直接发到微信群。'));
-        }
+        function copyLink() { navigator.clipboard.writeText(getStudentUrl()).then(() => alert('✅ 学生链接已复制到剪贴板！可以直接发到微信群。')); }
 
         function showQR() {
             const url = getStudentUrl();
@@ -247,14 +260,8 @@
             peer.on('connection', conn => {
                 connections.push(conn);
                 conn.on('data', data => {
-                    if(data.type === 'join') {
-                        connectedStudents[conn.peer] = data.name;
-                        updateConnCount();
-                    }
-                    if(data.type === 'score') {
-                        scores.unshift({name: data.name, score: data.score, acc: data.acc, type: data.gameType});
-                        renderScores();
-                    }
+                    if(data.type === 'join') { connectedStudents[conn.peer] = data.name; updateConnCount(); }
+                    if(data.type === 'score') { scores.unshift({name: data.name, score: data.score, acc: data.acc, type: data.gameType}); renderScores(); }
                 });
                 conn.on('close', () => { 
                     connections = connections.filter(c => c !== conn); 
@@ -276,7 +283,60 @@
             if(type === 'words' && !currentWords.length) return alert("词表为空");
             const payload = { type: type, data: currentWords };
             connections.forEach(c => c.send(payload));
-            alert("推送成功！");
+
+            // 保存词表到历史记录
+            if(type === 'words') {
+                let history = JSON.parse(localStorage.getItem('vocabTeacherHistory')) || [];
+                history.unshift({
+                    id: Date.now(),
+                    date: new Date().toLocaleString(),
+                    words: JSON.parse(JSON.stringify(currentWords))
+                });
+                localStorage.setItem('vocabTeacherHistory', JSON.stringify(history));
+                renderHistory();
+            }
+            alert("✅ 推送成功！(若为词表已自动存入历史)");
+        }
+
+        // 渲染与管理历史记录
+        function renderHistory() {
+            let history = JSON.parse(localStorage.getItem('vocabTeacherHistory')) || [];
+            const list = document.getElementById('history-list');
+            if(!history.length) {
+                list.innerHTML = '<div class="text-center text-gray-400 py-4 text-sm">暂无历史记录 (每次推送词表时自动保存)</div>';
+                return;
+            }
+            list.innerHTML = history.map(h => `
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-bold text-gray-800"><i class="fas fa-clock text-blue-400 mr-1"></i> ${h.date} <span class="text-xs bg-gray-200 text-gray-500 px-2 rounded-full ml-1">${h.words.length} 词</span></span>
+                        <div class="flex gap-3">
+                            <button onclick="loadHistory(${h.id})" class="text-blue-500 font-bold text-sm hover:underline">加载到备课板</button>
+                            <button onclick="deleteHistory(${h.id})" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-500 truncate bg-white p-2 rounded border border-gray-100">${h.words.map(w => w.word).join(', ')}</div>
+                </div>
+            `).join('');
+        }
+
+        function loadHistory(id) {
+            let history = JSON.parse(localStorage.getItem('vocabTeacherHistory')) || [];
+            let target = history.find(h => h.id === id);
+            if(target) {
+                if(currentWords.length > 0 && !confirm("此操作将覆盖当前备课板里的单词，确认加载吗？")) return;
+                currentWords = JSON.parse(JSON.stringify(target.words));
+                renderCards();
+                switchTab('prepare');
+            }
+        }
+
+        function deleteHistory(id) {
+            if(!confirm("确定删除这条历史记录吗？")) return;
+            let history = JSON.parse(localStorage.getItem('vocabTeacherHistory')) || [];
+            history = history.filter(h => h.id !== id);
+            localStorage.setItem('vocabTeacherHistory', JSON.stringify(history));
+            renderHistory();
         }
 
         function renderScores() {
