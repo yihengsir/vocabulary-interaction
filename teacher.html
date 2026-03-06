@@ -49,10 +49,13 @@
                     <button onclick="processWords(false)" class="duo-btn btn-blue flex-1 py-3 rounded-xl text-lg flex items-center justify-center gap-2">
                         <i class="fas fa-magic"></i> 智能解析 (覆盖)
                     </button>
-                    <button onclick="processWords(true)" class="duo-btn btn-gray px-6 py-3 rounded-xl text-lg" title="追加新词">
+                    <button onclick="processWords(true)" class="duo-btn btn-gray px-6 py-3 rounded-xl text-lg" title="追加新词 (保持原有内容)">
                         <i class="fas fa-plus"></i>
                     </button>
                 </div>
+            </div>
+            <div id="loading-indicator" class="hidden text-center py-4 bg-blue-50 rounded-xl border border-blue-100 mb-3">
+                <i class="fas fa-spinner fa-spin text-blue-500 text-xl mr-2"></i> <span class="text-blue-600 font-bold">AI正在解析新词中...</span>
             </div>
             <div id="cards-container" class="space-y-3"></div>
         </section>
@@ -77,7 +80,7 @@
                         <div class="text-sm font-bold text-gray-500">已连接学生 (<span id="student-count">0</span>)</div>
                     </div>
                     <div id="student-names" class="flex flex-wrap gap-2 text-sm font-bold text-blue-600">
-                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -127,7 +130,7 @@
         let currentWords = [];
         let peer = null;
         let connections = [];
-        let connectedStudents = {}; // 新增：记录 PeerID 到 名字的映射
+        let connectedStudents = {}; 
         let scores = [];
 
         function checkAuth() {
@@ -155,17 +158,25 @@
             document.getElementById('settings-modal').classList.add('hidden');
         }
 
-        // 修改：增加 isAppend 参数支持追加单词
         async function processWords(isAppend = false) {
             if(!config.key) return alert("请先配置 API Key");
             const inputEl = document.getElementById('input-words');
             const words = inputEl.value.split(/[\n,]+/).map(w=>w.trim()).filter(w=>w);
             if(!words.length) return alert("请输入单词！");
 
-            document.getElementById('cards-container').innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i> AI正在解析中...</div>';
+            const container = document.getElementById('cards-container');
+            const loader = document.getElementById('loading-indicator');
             
-            if(!isAppend) currentWords = [];
+            // 如果是覆盖模式，清空现有单词数组和界面
+            if(!isAppend) {
+                currentWords = [];
+                container.innerHTML = '';
+            }
+            
+            // 显示顶部加载动画（不破坏现有卡片）
+            loader.classList.remove('hidden');
 
+            let newlyAdded = [];
             for(let w of words) {
                 const prompt = `You are an expert English teacher preparing A2-B1 level students for international middle school entrance exams. Analyze: "${w}". 1. If Chinese, translate to the best English word. 2. If English with a typo, correct it. 3. Identify part of speech or 'phrase'. Return strictly JSON: {"word":"corrected word/phrase", "phonetic":"IPA", "pos":"part of speech", "definition_cn":"中文释义", "example_sentence":"An engaging A2-B1 level example sentence", "example_translation":"例句翻译"}`;
                 try {
@@ -175,10 +186,16 @@
                     });
                     const data = await res.json();
                     let text = data.choices[0].message.content.replace(/```json|```/g, '').trim();
-                    currentWords.push(JSON.parse(text));
-                } catch (e) { console.error(e); }
+                    newlyAdded.push(JSON.parse(text));
+                } catch (e) { console.error("Error processing word:", w, e); }
             }
-            if(isAppend) inputEl.value = ""; // 追加成功后清空输入框
+            
+            loader.classList.add('hidden');
+            
+            // 将新词合并到主数组，如果是追加则加在最前面（方便立刻看到），然后整体重新渲染
+            currentWords = isAppend ? [...newlyAdded, ...currentWords] : newlyAdded;
+            
+            if(isAppend) inputEl.value = ""; 
             renderCards();
         }
 
@@ -196,10 +213,8 @@
             `).join('');
         }
 
-        // --- WebRTC 与分享逻辑 ---
         function getStudentUrl() {
             const cid = document.getElementById('class-id').value;
-            // 动态获取当前 URL，将 teacher.html 替换为 student.html，并拼接 classId
             let baseUrl = window.location.href.split('?')[0].replace('teacher.html', 'student.html');
             return `${baseUrl}?classId=${cid}`;
         }
@@ -210,7 +225,7 @@
 
         function showQR() {
             const url = getStudentUrl();
-            document.getElementById('qrcode').innerHTML = ""; // 清空旧二维码
+            document.getElementById('qrcode').innerHTML = ""; 
             new QRCode(document.getElementById("qrcode"), { text: url, width: 220, height: 220, colorDark : "#1f2937", colorLight : "#ffffff" });
             document.getElementById('qr-class-id').innerText = `Class ID: ${document.getElementById('class-id').value}`;
             document.getElementById('qr-modal').classList.remove('hidden');
@@ -226,13 +241,12 @@
             peer.on('open', id => {
                 document.getElementById('btn-server').innerText = "教室已开启";
                 document.getElementById('btn-server').classList.replace('btn-green', 'btn-gray');
-                document.getElementById('share-tools').classList.remove('hidden'); // 开启教室后显示分享按钮
+                document.getElementById('share-tools').classList.remove('hidden');
             });
 
             peer.on('connection', conn => {
                 connections.push(conn);
                 conn.on('data', data => {
-                    // 新增：接收学生发送的名字
                     if(data.type === 'join') {
                         connectedStudents[conn.peer] = data.name;
                         updateConnCount();
@@ -244,7 +258,7 @@
                 });
                 conn.on('close', () => { 
                     connections = connections.filter(c => c !== conn); 
-                    delete connectedStudents[conn.peer]; // 移除断开连接的学生
+                    delete connectedStudents[conn.peer]; 
                     updateConnCount(); 
                 });
             });
@@ -252,7 +266,6 @@
 
         function updateConnCount() { 
             document.getElementById('student-count').innerText = connections.length; 
-            // 渲染学生名字标签
             document.getElementById('student-names').innerHTML = Object.values(connectedStudents).map(name => 
                 `<span class="bg-blue-100 px-3 py-1 rounded-lg text-blue-600 border border-blue-200 shadow-sm"><i class="fas fa-user text-xs mr-1"></i>${name}</span>`
             ).join('');
