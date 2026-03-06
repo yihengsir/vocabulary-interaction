@@ -16,6 +16,9 @@
         .btn-gray { background-color: #e5e7eb; border-color: #d1d5db; color: #4b5563; }
         .nav-item.active { color: #58cc02; background-color: #e5f9d6; border: 2px solid #b3eb87; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        /* 隐藏 details 标签自带的黑三角箭头 */
+        summary { list-style: none; }
+        summary::-webkit-details-marker { display: none; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -36,13 +39,14 @@
     </div>
 
     <nav class="bg-white border-b-2 border-gray-200 px-3 sm:px-4 py-3 z-10 flex justify-between items-center shrink-0">
-        <div class="font-extrabold text-lg sm:text-xl flex items-center gap-2 text-gray-700 whitespace-nowrap">
+        <div class="font-extrabold text-lg sm:text-xl flex items-center gap-1 text-gray-700 whitespace-nowrap">
             My Words 
-            <button onclick="location.reload()" class="text-gray-400 hover:text-blue-500 ml-1 bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center border border-gray-200"><i class="fas fa-sync-alt text-sm"></i></button>
+            <button onclick="location.reload()" class="text-gray-400 hover:text-blue-500 bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center border border-gray-200"><i class="fas fa-sync-alt text-sm"></i></button>
         </div>
-        <div class="flex gap-1.5 sm:gap-2">
-            <button onclick="switchTab('words')" id="tab-words" class="nav-item active px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book mr-1"></i>生词表</button>
-            <button onclick="switchTab('mistakes')" id="tab-mistakes" class="nav-item text-gray-400 px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book-dead mr-1"></i>错题本</button>
+        <div class="flex gap-1">
+            <button onclick="switchTab('words')" id="tab-words" class="nav-item active px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book mr-1"></i>词表</button>
+            <button onclick="switchTab('mistakes')" id="tab-mistakes" class="nav-item text-gray-400 px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-book-dead mr-1"></i>错题</button>
+            <button onclick="switchTab('history')" id="tab-history" class="nav-item text-gray-400 px-2 sm:px-3 py-1.5 rounded-lg font-bold text-sm whitespace-nowrap"><i class="fas fa-history mr-1"></i>历史</button>
         </div>
     </nav>
 
@@ -50,7 +54,7 @@
         <div id="view-words" class="space-y-3">
             <div class="text-center text-gray-400 font-bold text-sm py-10" id="empty-state">
                 <i class="fas fa-satellite-dish text-4xl mb-3 text-gray-300"></i><br>
-                等待老师发送单词...
+                等待老师发送最新单词...
             </div>
             <div id="words-list" class="space-y-3"></div>
         </div>
@@ -61,6 +65,13 @@
                 <button onclick="clearMistakes()" class="text-xs text-gray-400 hover:text-red-500 font-bold"><i class="fas fa-trash"></i> 清空</button>
             </div>
             <div id="mistakes-list" class="space-y-3"></div>
+        </div>
+
+        <div id="view-history" class="hidden space-y-3">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-bold text-gray-600"><i class="fas fa-archive"></i> 过往词表存档</span>
+            </div>
+            <div id="history-list" class="space-y-3"></div>
         </div>
 
         <div id="game-overlay" class="fixed inset-0 bg-white z-40 hidden flex-col">
@@ -88,14 +99,18 @@
         let peer = null;
         let conn = null;
         let myName = "";
+        
         let localWords = JSON.parse(localStorage.getItem('vocabLocalWords')) || [];
         let mistakes = JSON.parse(localStorage.getItem('vocabMistakes')) || [];
+        // 新增历史记录状态
+        let studentHistory = JSON.parse(localStorage.getItem('vocabStudentHistory')) || [];
         
         let currentGame = [], gIdx = 0, gScore = 0, gType = '';
 
         window.onload = () => { 
             renderWords(); 
             renderMistakes(); 
+            renderHistory();
             
             const urlParams = new URLSearchParams(window.location.search);
             if(urlParams.has('classId')) {
@@ -103,21 +118,22 @@
             }
         };
 
-        // 新增：离线复习模式逻辑
         function offlineMode() {
             if(document.getElementById('entry-pass').value !== 'study with FF') return alert('密码错误');
-            if(localWords.length === 0 && mistakes.length === 0) return alert('本地暂无历史数据，请先连接教室获取数据！');
+            if(localWords.length === 0 && mistakes.length === 0 && studentHistory.length === 0) return alert('本地暂无历史数据，请先连接教室获取数据！');
             
             document.getElementById('auth-screen').classList.add('hidden');
-            // 如果只有错题没有词表，自动跳到错题页
             if(localWords.length === 0 && mistakes.length > 0) {
                 switchTab('mistakes');
+            } else if(localWords.length === 0 && studentHistory.length > 0) {
+                switchTab('history');
             }
         }
 
         function switchTab(t) {
-            ['words', 'mistakes'].forEach(x => {
-                document.getElementById(`tab-${x}`).classList.replace('active', 'text-gray-400');
+            ['words', 'mistakes', 'history'].forEach(x => {
+                document.getElementById(`tab-${x}`).classList.remove('active');
+                document.getElementById(`tab-${x}`).classList.add('text-gray-400');
                 document.getElementById(`view-${x}`).classList.add('hidden');
             });
             document.getElementById(`tab-${t}`).classList.add('active');
@@ -152,11 +168,22 @@
 
         function handleTeacherData(payload) {
             if(payload.type === 'words') {
+                // 将最新接收到的词表保存到当前视图
                 localWords = payload.data;
                 localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
+                
+                // 将这份最新词表直接追加到历史库中
+                studentHistory.unshift({
+                    id: Date.now(),
+                    date: new Date().toLocaleString(),
+                    words: JSON.parse(JSON.stringify(payload.data))
+                });
+                localStorage.setItem('vocabStudentHistory', JSON.stringify(studentHistory));
+
                 renderWords();
+                renderHistory();
                 switchTab('words');
-                alert('📥 收到老师发送的新词表！');
+                alert('📥 收到老师发送的新词表！\n(此词表已自动存入“历史”标签页中)');
             } else if(payload.type.startsWith('game_')) {
                 startGame(payload.type, payload.data);
             }
@@ -168,7 +195,7 @@
             else document.getElementById('empty-state').classList.remove('hidden');
 
             list.innerHTML = localWords.map(w => `
-                <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition" onclick="speak('${w.word}')">
+                <div class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm cursor-pointer hover:border-blue-300 transition" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
                     <div class="flex justify-between items-baseline mb-1">
                         <span class="font-extrabold text-xl text-gray-800">${w.word}</span>
                         <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold">${w.pos}</span>
@@ -181,7 +208,7 @@
 
         function renderMistakes() {
             document.getElementById('mistakes-list').innerHTML = mistakes.map(w => `
-                <div class="bg-red-50 p-4 rounded-xl border-2 border-red-100 flex justify-between items-center cursor-pointer hover:bg-red-100 transition" onclick="speak('${w.word}')">
+                <div class="bg-red-50 p-4 rounded-xl border-2 border-red-100 flex justify-between items-center cursor-pointer hover:bg-red-100 transition" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
                     <div>
                         <div class="font-extrabold text-lg text-red-600 mb-1">${w.word}</div>
                         <div class="text-sm font-bold text-gray-600">${w.definition_cn}</div>
@@ -191,6 +218,35 @@
             `).join('');
         }
         function clearMistakes() { if(confirm("确定清空错题本吗？")) { mistakes=[]; localStorage.removeItem('vocabMistakes'); renderMistakes(); } }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            if(!studentHistory.length) {
+                list.innerHTML = '<div class="text-center text-gray-400 font-bold text-sm py-10"><i class="fas fa-box-open text-4xl mb-3 text-gray-300"></i><br>暂无历史词表</div>';
+                return;
+            }
+            
+            // 使用 <details> 标签实现可折叠手风琴效果
+            list.innerHTML = studentHistory.map(h => `
+                <details class="bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm group mb-3 outline-none cursor-pointer">
+                    <summary class="flex justify-between items-center list-none font-bold text-gray-700 outline-none">
+                        <span><i class="fas fa-clock text-blue-400 mr-2"></i>${h.date}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">${h.words.length} 词</span>
+                            <i class="fas fa-chevron-down text-gray-400 group-open:rotate-180 transition"></i>
+                        </div>
+                    </summary>
+                    <div class="space-y-2 mt-4 border-t-2 border-gray-100 pt-4">
+                        ${h.words.map(w => `
+                            <div class="flex justify-between items-center text-sm hover:bg-gray-50 p-1 rounded transition" onclick="speak('${w.word.replace(/'/g, "\\'")}')">
+                                <span class="font-extrabold text-gray-800">${w.word}</span> 
+                                <span class="text-gray-500 truncate w-1/2 text-right">${w.definition_cn}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            `).join('');
+        }
 
         function startGame(type, data) {
             if(!data || data.length === 0) return;
@@ -218,7 +274,7 @@
                     if(!opts.includes(rand)) opts.push(rand);
                 }
                 document.getElementById('mcq-area').innerHTML = opts.sort(()=>0.5-Math.random()).map(o => `
-                    <button onclick="checkMCQ('${o.word}', '${q.word}')" class="duo-btn btn-blue py-5 rounded-2xl text-xl w-full border-blue-600 shadow-md">${o.word}</button>
+                    <button onclick="checkMCQ('${o.word.replace(/'/g, "\\'")}', '${q.word.replace(/'/g, "\\'")}')" class="duo-btn btn-blue py-5 rounded-2xl text-xl w-full border-blue-600 shadow-md">${o.word}</button>
                 `).join('');
             } else if (gType === 'game_dict') {
                 document.getElementById('q-text').innerText = "听音拼写单词";
