@@ -27,6 +27,10 @@
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
+    <div id="status-bar" class="hidden bg-gray-500 text-white text-xs py-1.5 text-center font-bold cursor-pointer transition-colors z-20 shrink-0" onclick="reconnectClass()" style="padding-top: max(env(safe-area-inset-top), 6px);">
+        等待操作...
+    </div>
+
     <div id="auth-screen" class="fixed inset-0 bg-green-500 z-50 flex flex-col items-center justify-center p-6">
         <div class="bg-white p-8 rounded-3xl w-full max-w-sm text-center shadow-xl">
             <div class="text-green-500 text-5xl mb-4"><i class="fas fa-user-graduate"></i></div>
@@ -108,6 +112,8 @@
         let peer = null;
         let conn = null;
         let myName = "";
+        let lastClassId = "";
+        let isConnected = false;
         
         let localWords = JSON.parse(localStorage.getItem('vocabLocalWords')) || [];
         let mistakes = JSON.parse(localStorage.getItem('vocabMistakes')) || [];
@@ -125,6 +131,24 @@
                 document.getElementById('class-id').value = urlParams.get('classId');
             }
         };
+
+        function updateStatus(status) {
+            const bar = document.getElementById('status-bar');
+            bar.classList.remove('hidden');
+            if(status === 'online') {
+                bar.className = "bg-green-500 text-white text-xs py-1.5 text-center font-bold cursor-pointer transition-colors z-20 shrink-0";
+                bar.innerHTML = '<i class="fas fa-check-circle mr-1"></i> 已连接教室 (在线)';
+                isConnected = true;
+            } else if (status === 'offline') {
+                bar.className = "bg-red-500 text-white text-xs py-1.5 text-center font-bold cursor-pointer transition-colors z-20 shrink-0 hover:bg-red-600";
+                bar.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> 离线 - 点击此处重新连接';
+                isConnected = false;
+            } else if (status === 'connecting') {
+                bar.className = "bg-yellow-500 text-white text-xs py-1.5 text-center font-bold cursor-pointer transition-colors z-20 shrink-0";
+                bar.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> 正在连接...';
+                isConnected = false;
+            }
+        }
 
         function offlineMode() {
             if(document.getElementById('entry-pass').value !== 'study with FF') return alert('密码错误');
@@ -155,23 +179,39 @@
             const cid = document.getElementById('class-id').value.trim();
             if(!myName || !cid) return alert('请输入你的名字和班级码');
 
+            lastClassId = cid;
+            updateStatus('connecting');
+
             document.getElementById('btn-connect').innerText = "连接中...";
             document.getElementById('btn-connect').classList.replace('btn-green', 'btn-gray');
             
+            if(peer) peer.destroy();
             peer = new Peer(`vocab-stu-${Math.floor(Math.random()*10000)}`);
             peer.on('open', () => {
                 conn = peer.connect(`vocab-ff-${cid}`);
                 conn.on('open', () => {
                     document.getElementById('auth-screen').classList.add('hidden');
                     conn.send({ type: 'join', name: myName });
+                    updateStatus('online');
                 });
                 conn.on('data', data => handleTeacherData(data));
-                conn.on('error', err => {
-                    alert('连接失败，请检查班级码是否正确或老师是否已开启教室。');
-                    document.getElementById('btn-connect').innerText = "进入教室";
-                    document.getElementById('btn-connect').classList.replace('btn-gray', 'btn-green');
-                });
+                conn.on('close', () => updateStatus('offline'));
+                conn.on('error', () => updateStatus('offline'));
             });
+            peer.on('disconnected', () => updateStatus('offline'));
+            peer.on('error', err => {
+                updateStatus('offline');
+                alert('连接失败，请检查班级码是否正确或老师是否已开启教室。');
+                document.getElementById('btn-connect').innerText = "进入教室";
+                document.getElementById('btn-connect').classList.replace('btn-gray', 'btn-green');
+            });
+        }
+
+        function reconnectClass() {
+            if(!isConnected && myName && lastClassId) {
+                document.getElementById('class-id').value = lastClassId;
+                connectClass();
+            }
         }
 
         function handleTeacherData(payload) {
@@ -189,7 +229,25 @@
                 renderWords();
                 renderHistory();
                 switchTab('words');
-                alert('📥 收到老师发送的新词表！\n(此词表已自动存入“历史”标签页中)');
+                alert('📥 收到老师发送的最新词表！\n(此词表已自动存入“历史”标签页中)');
+            } else if (payload.type === 'append_word') {
+                const newWord = payload.data;
+                // 防止重复添加
+                if(!localWords.find(w => w.word === newWord.word)) {
+                    localWords.unshift(newWord);
+                    localStorage.setItem('vocabLocalWords', JSON.stringify(localWords));
+                    
+                    // 同步更新最近一次的历史记录（如果有）
+                    if(studentHistory.length > 0) {
+                        studentHistory[0].words.unshift(newWord);
+                        localStorage.setItem('vocabStudentHistory', JSON.stringify(studentHistory));
+                    }
+                    
+                    renderWords();
+                    renderHistory();
+                    switchTab('words');
+                    alert(`📥 老师追加了一个新单词: ${newWord.word}`);
+                }
             } else if(payload.type.startsWith('game_')) {
                 startGame(payload.type, payload.data);
             }
